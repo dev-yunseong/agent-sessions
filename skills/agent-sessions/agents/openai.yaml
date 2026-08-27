@@ -1,0 +1,4 @@
+interface:
+  display_name: "Agent Sessions"
+  short_description: "Find and read other coding agents' session records"
+  default_prompt: "Use $agent-sessions to find what another agent was doing here and summarize where it stopped."
