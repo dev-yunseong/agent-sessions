@@ -1,7 +1,8 @@
-"""agent-sessions skill 공용 라이브러리.
+"""Shared library for the agent-sessions skill.
 
-Claude Code / codex / agy (Google Antigravity CLI) 세션 저장소를 읽기 전용으로 훑는다.
-SQLite 는 반드시 mode=ro URI 로만 연다. 파일을 쓰거나 지우는 코드는 이 파일에 없다.
+Sweeps the Claude Code / codex / agy (Google Antigravity CLI) session stores
+read-only. SQLite is always opened through a mode=ro URI. Nothing in this file
+writes or deletes a file.
 """
 
 from __future__ import annotations
@@ -15,23 +16,23 @@ import time
 
 HOME = os.path.expanduser("~")
 
-# ---------------------------------------------------------------- 저장소 위치
+# ---------------------------------------------------------------- store locations
 
 CLAUDE_PROJECTS_ROOT = os.path.join(HOME, ".claude", "projects")
 
-# codex 는 CODEX_HOME 환경 변수로 홈이 통째로 바뀐다. 환경 변수가 1순위이고,
-# 나머지는 codex 를 다른 곳에서 띄웠을 때를 대비한 후보다.
+# CODEX_HOME relocates the whole codex home, so the environment variable wins.
+# The rest are fallbacks for a codex started somewhere else.
 ORCA_CODEX_RUNTIME_SUFFIX = os.path.join("orca", "codex-runtime-home", "home")
 CODEX_HOME_CANDIDATES = [
     os.environ.get("CODEX_HOME") or "",
     os.path.join(HOME, ".codex"),
-    # Orca 터미널이 CODEX_HOME 을 갈아끼운 홈. 실무 세션 대부분이 여기 있다.
-    # Orca 밖에서 돌리면 환경 변수가 없으므로 운영체제별 기본 위치를 직접 짚는다.
+    # The home Orca terminals swap CODEX_HOME to. Most real sessions live here.
+    # Outside Orca the variable is unset, so name the per-OS defaults directly.
     os.path.join(HOME, ".local", "share", ORCA_CODEX_RUNTIME_SUFFIX),
     os.path.join(HOME, "Library", "Application Support", ORCA_CODEX_RUNTIME_SUFFIX),
 ]
-# Windows Subsystem for Linux 에서 보이는 Windows 쪽 codex 홈.
-# 드라이브 문자와 automount 루트가 환경마다 달라서 둘 다 와일드카드로 둔다.
+# Windows-side codex homes as seen from Windows Subsystem for Linux.
+# Drive letter and automount root differ per machine, so both are wildcards.
 CODEX_HOME_GLOBS = [
     "/mnt/*/Users/*/.codex",
     "/media/*/Users/*/.codex",
@@ -41,10 +42,10 @@ AGY_ROOT = os.path.join(HOME, ".gemini", "antigravity-cli")
 AGY_CONVERSATIONS = os.path.join(AGY_ROOT, "conversations")
 AGY_HISTORY = os.path.join(AGY_ROOT, "history.jsonl")
 
-# codex 가 승인 판정용으로 띄우는 하위 세션의 첫 사용자 메시지.
+# First user message of the sub-session codex spawns to assess an approval.
 APPROVAL_MARKER = "The following is the Codex agent history whose request action you are assessing"
 
-# codex 가 대화 앞에 사용자 역할로 밀어 넣는 시스템 preamble.
+# System preamble codex pushes in front of the conversation as the user role.
 CODEX_PREAMBLE_PREFIXES = (
     "# AGENTS.md instructions",
     "<user_instructions>",
@@ -53,7 +54,7 @@ CODEX_PREAMBLE_PREFIXES = (
     "<INSTRUCTIONS>",
 )
 
-# Claude Code 가 사용자 역할로 밀어 넣는 시스템 preamble.
+# System preamble Claude Code pushes in as the user role.
 CLAUDE_PREAMBLE_PREFIXES = (
     "<command-name>",
     "<command-message>",
@@ -68,7 +69,7 @@ CLAUDE_PREAMBLE_PREFIXES = (
     "API Error",
 )
 
-# 모델에 주입된 지시문. 사람이 친 말이 아니라 기본 출력에서 뺀다.
+# Instructions injected into the model, not typed by a human: hidden by default.
 PREAMBLE_PREFIXES = CODEX_PREAMBLE_PREFIXES + CLAUDE_PREAMBLE_PREFIXES + (
     "<skills_instructions>", "<multi_agent_mode>", "You are `/root`",
 )
@@ -85,7 +86,7 @@ def is_preamble(event):
 
 
 def codex_homes():
-    """존재하는 codex 홈 디렉토리 목록. 중복 제거, 순서 유지."""
+    """Existing codex home directories, deduplicated, order preserved."""
     out = []
     cands = list(CODEX_HOME_CANDIDATES)
     for pattern in CODEX_HOME_GLOBS:
@@ -102,11 +103,11 @@ def codex_homes():
 
 
 def project_slug(cwd):
-    """절대 경로를 Claude Code 프로젝트 디렉토리 이름으로 바꾼다."""
+    """Turn an absolute path into a Claude Code project directory name."""
     return os.path.abspath(os.path.expanduser(cwd)).replace("/", "-")
 
 
-# ---------------------------------------------------------------- 유틸리티
+# ---------------------------------------------------------------- utilities
 
 def _clean(text, limit=None):
     text = re.sub(r"\s+", " ", (text or "")).strip()
@@ -130,7 +131,7 @@ def _size(path):
 
 
 def ro_connect(path):
-    """SQLite 를 읽기 전용으로 연다. 실행 중인 세션의 데이터베이스도 안전하다."""
+    """Open SQLite read-only. Safe even on a running session's database."""
     return sqlite3.connect("file:" + path + "?mode=ro", uri=True)
 
 
@@ -140,7 +141,7 @@ def iso(epoch_seconds):
     return time.strftime("%Y-%m-%d %H:%M", time.localtime(epoch_seconds))
 
 
-# ---------------------------------------------------------------- 세션 레코드
+# ---------------------------------------------------------------- session records
 
 class Session(dict):
     """agent / session_id / cwd / updated / first_user_message / path / kind / live."""
@@ -170,7 +171,7 @@ def _mk(agent, session_id, path, cwd, updated, first_user, kind="main",
 # ---------------------------------------------------------------- Claude Code
 
 def _claude_scan(path, live_window):
-    """헤드만 읽어 cwd 와 첫 사용자 메시지를 뽑는다."""
+    """Read only the head to pull out cwd and the first user message."""
     cwd = ""
     session_id = os.path.splitext(os.path.basename(path))[0]
     first_user = ""
@@ -205,7 +206,7 @@ def _claude_scan(path, live_window):
 
 
 def _claude_user_text(rec):
-    """사용자가 실제로 친 문장만 돌려준다. 시스템 preamble 과 tool_result 는 뺀다."""
+    """Only what the user actually typed: no system preamble, no tool_result."""
     if rec.get("type") == "queue-operation" and rec.get("operation") == "enqueue":
         text = rec.get("content") or ""
     elif rec.get("type") == "user":
@@ -232,7 +233,7 @@ def _claude_user_text(rec):
 
 
 def _prefilter(paths, since_epoch, max_scan):
-    """mtime 만 보고 후보를 줄인다. 본문 파싱이 비싸서 먼저 자른다."""
+    """Narrow the candidates by mtime alone; parsing bodies is expensive."""
     pairs = [(p, _mtime(p)) for p in paths]
     if since_epoch:
         pairs = [pair for pair in pairs if pair[1] >= since_epoch]
@@ -262,7 +263,7 @@ def list_claude_sessions(live_window=LIVE_WINDOW_SECONDS, cwd_filter=None,
 
 
 def read_claude_session(path, include_thinking=False):
-    """Claude Code 세션을 순서대로 이벤트 목록으로 편다."""
+    """Flatten a Claude Code session into an ordered event list."""
     events = []
     with open(path, encoding="utf-8", errors="replace") as fh:
         for line in fh:
@@ -460,10 +461,11 @@ def read_codex_session(path, include_thinking=False):
 
 
 def codex_state_databases(home):
-    """codex 홈 하나가 가진 state 색인 데이터베이스 경로.
+    """State index database paths held by one codex home.
 
-    codex 는 스키마를 바꿀 때 파일 이름의 숫자를 올린다 (state_5 다음은 state_6).
-    숫자를 고정하면 codex 가 올라간 날 조용히 빈 결과가 나오므로 glob 으로 찾는다.
+    codex bumps the number in the file name whenever the schema changes
+    (state_5 as observed, state_6 next). A hard-coded number would silently
+    return nothing the day codex is upgraded, so glob for it instead.
     """
     found = []
     for pattern in ("state_*.sqlite", os.path.join("sqlite", "state_*.sqlite")):
@@ -472,7 +474,7 @@ def codex_state_databases(home):
 
 
 def codex_index_rows(limit=200):
-    """각 codex 홈의 state 색인 threads 테이블. 홈마다 색인이 따로 논다."""
+    """threads table of every codex home state index. One index per home."""
     rows = []
     seen = set()
     for home in codex_homes():
@@ -499,7 +501,7 @@ def codex_index_rows(limit=200):
 
 AGY_PRINTABLE = re.compile(rb"[^\x00-\x08\x0b-\x1f\x7f]{20,}")
 
-# step_type 별 의미. 실제 데이터베이스에서 확인한 값이다.
+# Meaning per step_type, confirmed against real databases.
 AGY_STEP_TYPES = {
     14: ("user", "text"),
     15: ("assistant", "text"),
@@ -513,7 +515,7 @@ _AGY_UUID_ONLY = re.compile(
 
 
 def agy_history_index():
-    """history.jsonl 을 conversationId 로 묶는다. agy 세션 1차 조회 수단."""
+    """Group history.jsonl by conversationId; primary agy session lookup."""
     index = {}
     if not os.path.exists(AGY_HISTORY):
         return index
@@ -549,8 +551,8 @@ def agy_history_index():
 
 
 def agy_prompts(conversation_id):
-    """history.jsonl 에 남은 사용자 프롬프트 원문. 오래된 줄에는
-    conversationId 가 없어 여기 안 잡힐 수 있다."""
+    """Verbatim user prompts left in history.jsonl. Older lines carry no
+    conversationId, so they may not show up here."""
     out = []
     if not os.path.exists(AGY_HISTORY):
         return out
@@ -579,8 +581,8 @@ def list_agy_sessions(live_window=LIVE_WINDOW_SECONDS, cwd_filter=None,
         seen.add(cid)
         meta = index.get(cid, {})
         mtime = _mtime(path)
-        # write-ahead log 에 내용이 남아 있으면 아직 쓰는 중이다. -shm 은
-        # agy 프로세스가 모든 대화를 열어 두기 때문에 살아 있는 신호가 못 된다.
+        # A non-empty write-ahead log means a write is still in progress. -shm
+        # is no such signal: the agy process holds every conversation open.
         wal = _size(path + "-wal")
         out.append(_mk(
             "agy", cid, path, meta.get("workspace", ""), mtime,
@@ -590,7 +592,7 @@ def list_agy_sessions(live_window=LIVE_WINDOW_SECONDS, cwd_filter=None,
                    "last_prompt": _clean(meta.get("last_display", ""), 200),
                    "wal_bytes": wal},
         ))
-    # 데이터베이스가 지워졌어도 history.jsonl 에 남은 대화는 기록으로 남긴다.
+    # A deleted database still leaves a record if history.jsonl has the thread.
     for cid, meta in index.items():
         if cid in seen:
             continue
@@ -604,7 +606,7 @@ def list_agy_sessions(live_window=LIVE_WINDOW_SECONDS, cwd_filter=None,
 
 
 def agy_printable(blob, raw=False):
-    """protobuf blob 에서 사람이 읽을 수 있는 문자열만 뽑는다."""
+    """Pull only the human-readable strings out of a protobuf blob."""
     if not blob:
         return ""
     parts = [m.decode("utf-8", "replace") for m in AGY_PRINTABLE.findall(blob)]
@@ -618,21 +620,24 @@ def agy_printable(blob, raw=False):
         kept.append(stripped)
     if not kept:
         return ""
-    # 진짜 본문은 압도적으로 긴 조각이다. 나머지 protobuf 헤더 부스러기는 버린다.
+    # The real body is by far the longest fragment; drop the protobuf header
+    # scraps around it.
     longest = max(len(k) for k in kept)
     floor = min(60, max(20, int(longest * 0.15)))
     body = "\n".join(k for k in kept if len(k) >= floor or longest < 60)
     return _strip_framing_lines(body)
 
 
-# protobuf 필드 구분자가 본문과 같은 조각에 붙어 나온다. 줄바꿈이 printable
-# 문자라서 하나의 조각이 여러 줄에 걸치기 때문이다. 그 부스러기는 조각의 맨 앞과
-# 맨 뒤에만 붙으므로 양 끝에서만 걷어낸다. 가운데는 본문이라 건드리지 않는다.
+# protobuf field separators come out glued to the same fragment as the body,
+# because a newline is a printable byte and one fragment spans several lines.
+# That debris only clings to the first and last line of a fragment, so strip
+# from both ends only. The middle is body text and stays untouched.
 _AGY_OPAQUE_TOKEN = re.compile(r"^[A-Za-z0-9_\-]{16,64}$")
 
 
 def _is_framing_line(line):
-    # 디코딩 실패 표시는 protobuf 필드 경계에서 나온다. 판정 전에 걷어낸다.
+    # Replacement characters come from protobuf field boundaries; drop them
+    # before judging.
     text = line.replace("\ufffd", "").strip()
     if not text:
         return True
@@ -673,10 +678,11 @@ def _agy_keep(text):
 
 
 def read_agy_session(path, include_thinking=False):
-    """agy 대화를 이벤트 목록으로 편다.
+    """Flatten an agy conversation into an event list.
 
-    step_payload 는 protobuf blob 이고 공개 파서가 없다. printable 바이트만
-    뽑아 사람이 읽을 수 있게 만든 근사치이므로 무손실 전사가 아니다.
+    step_payload is a protobuf blob and no public parser exists. What comes out
+    is an approximation built from the printable bytes alone, NOT a lossless
+    transcript.
     """
     events = []
     conn = ro_connect(path)
@@ -690,7 +696,7 @@ def read_agy_session(path, include_thinking=False):
         role, kind = AGY_STEP_TYPES.get(
             step_type, ("unknown", "step_type_%s" % step_type))
         if kind == "tool_use":
-            # 도구 이름과 call id 는 metadata 에, 인자 JSON 은 양쪽 모두에 있다.
+            # Tool name and call id live in metadata, argument JSON in both.
             text = agy_printable(payload) or agy_printable(metadata)
             name = _agy_tool_name(metadata)
         else:
@@ -727,7 +733,7 @@ def agy_conversation_summaries():
     return rows
 
 
-# ---------------------------------------------------------------- 통합 조회
+# ---------------------------------------------------------------- unified lookup
 
 LISTERS = {
     "claude": list_claude_sessions,
@@ -781,7 +787,7 @@ def detect_agent(path):
 
 
 def resolve_target(target, include_approval=True):
-    """파일 경로 또는 session id / conversation uuid 를 세션 레코드로 바꾼다."""
+    """Resolve a file path or session id / conversation uuid into a record."""
     if os.path.exists(target):
         agent = detect_agent(target)
         for sess in list_sessions(agents=[agent], include_approval=True):
@@ -793,7 +799,7 @@ def resolve_target(target, include_approval=True):
                or s["session_id"].startswith(target)
                or target in os.path.basename(s["path"] or "")]
     if not matches:
-        raise SystemExit("세션을 찾지 못했다: %s" % target)
+        raise SystemExit("No session found: %s" % target)
     matches.sort(key=lambda s: s["updated"], reverse=True)
     return matches[0]
 
