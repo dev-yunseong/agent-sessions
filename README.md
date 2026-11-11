@@ -54,7 +54,7 @@ python3 scripts/read-session.py <session-id> --no-tools --tail 40
 | codex | JSONL rollout, 한 줄에 event 하나 | `$CODEX_HOME`, `~/.codex`, Orca runtime home, 그리고 `/mnt/*` 아래 보이는 Windows home |
 | agy | protobuf payload 를 담은 SQLite | `~/.gemini/antigravity-cli/conversations/<uuid>.db` |
 
-codex 는 실행 방식에 따라 기록을 여러 home 에 나눠 쌓고, home 마다 SQLite index 를 따로 둔다. index 하나만 믿으면 session 을 소리 없이 통째로 놓치기 때문에, 이 skill 은 모든 home 을 훑어 rollout 파일을 glob 한다. `SKILL.md` 에 전체 배치가 정리되어 있다. 각 형식을 손으로 parsing 할 때 필요한 record 모양까지 들어 있다.
+codex 는 실행 방식에 따라 기록을 여러 home 에 나눠 쌓고, home 마다 SQLite index 를 따로 둔다. index 하나만 믿으면 session 을 소리 없이 통째로 놓치기 때문에, 이 skill 은 모든 home 을 훑어 rollout 파일을 glob 한다. [저장 경로와 record 형식](skills/agent-sessions/references/session-storage.md)에서 전체 배치와 직접 parsing에 필요한 형식을 확인할 수 있다.
 
 ## 주의할 점
 
